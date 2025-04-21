@@ -21,43 +21,147 @@ namespace satdump
 
         if (premade_passes.size() == 0) // Normal algo, for normal LEOs
         {
-            while (current_time < initial_time + timespan)
-            {
-                predict_observation next_aos, next_los;
-                next_aos = next_los = predict_next_los(observer_station, satellite_object_, predict_to_julian_double(current_time));
-
-                // Calculate the AOS before that LOS
-                double next_aos_time_, next_los_time_;
-                next_aos_time_ = next_los_time_ = predict_from_julian(next_los.time);
-                do
-                {
-                    next_aos = predict_next_aos(observer_station, satellite_object_, predict_to_julian_double(next_aos_time_));
-                    next_aos_time_ -= 10;
-                } while (predict_from_julian(next_aos.time) >= next_los_time_);
-
-                next_los_time_ = predict_from_julian(next_los.time);
-                next_aos_time_ = predict_from_julian(next_aos.time);
-
-                float max_el = 0;
-                predict_position satellite_orbit2;
-                predict_observation observation_pos2;
-                double time_step = abs(next_los_time_ - next_aos_time_) / 50.0;
-                for (double ctime = next_aos_time_; ctime <= next_los_time_; ctime += time_step)
-                {
-                    predict_orbit(satellite_object_, &satellite_orbit2, predict_to_julian_double(ctime));
+            if (predict_is_geosynchronous(satellite_object_)) {
+                if(satellite_object_->satellite_number == 44903) {
+                    // Elektro L3 LRIT hard coded transmition time trick
+                    predict_position satellite_orbit2;
+                    predict_observation observation_pos2;
+                    predict_orbit(satellite_object_, &satellite_orbit2, predict_to_julian_double(initial_time));
                     predict_observe_orbit(observer_station, &satellite_orbit2, &observation_pos2);
-                    if (observation_pos2.elevation * RAD_TO_DEG > max_el)
-                        max_el = observation_pos2.elevation * RAD_TO_DEG;
+
+                    std::time_t time = static_cast<std::time_t>(initial_time);
+                    std::tm* tm_utc = std::gmtime(&time);
+                    tm_utc->tm_hour = 0;
+                    tm_utc->tm_min = 0;
+                    tm_utc->tm_sec = 0;
+                    std::time_t midnight_time_t = timegm(tm_utc);
+                    double epoch = static_cast<double>(midnight_time_t);
+                    epoch+=2520;    // 00:42
+                    // First transmition at UTC 00:42, and every hour then
+                    while (epoch < initial_time + timespan)
+                    {
+                        predict_orbit(satellite_object_, &satellite_orbit2, predict_to_julian_double(initial_time));
+                        predict_observe_orbit(observer_station, &satellite_orbit2, &observation_pos2);
+                        // Make elevation to 90 degree, so it always takes precedence over other sats
+                        observation_pos2.elevation = 1.57079633; 
+                        double aos = epoch;
+                        double los =  aos+780; // 13min
+                        if(aos < initial_time && los > initial_time)
+                        {
+                            //aos earlier than initial time
+                            aos = initial_time;
+                        }
+                        if(aos > initial_time && los > (initial_time+timespan))
+                        {
+                            //los greater than end time
+                            los = initial_time+timespan;
+                        }
+                        if(aos >= initial_time && los <= (initial_time+timespan))
+                        {
+                            passes.push_back(SatellitePass{norad, aos, los, static_cast<float>(observation_pos2.elevation * RAD_TO_DEG)});
+                        }
+                        epoch+= 10800;  //+3h
+                    }
+                } else if(satellite_object_->satellite_number == 43491) {
+                    // Fengyun 2H hard coded transmition time trick
+                    predict_position satellite_orbit2;
+                    predict_observation observation_pos2;
+                    predict_orbit(satellite_object_, &satellite_orbit2, predict_to_julian_double(initial_time));
+                    predict_observe_orbit(observer_station, &satellite_orbit2, &observation_pos2);
+
+                    std::time_t time = static_cast<std::time_t>(initial_time);
+                    std::tm* tm_utc = std::gmtime(&time);
+                    tm_utc->tm_hour = 0;
+                    tm_utc->tm_min = 0;
+                    tm_utc->tm_sec = 0;
+                    std::time_t midnight_time_t = timegm(tm_utc);
+                    double epoch = static_cast<double>(midnight_time_t);
+                    epoch+=3480;    // 00:58
+                    // First transmition at UTC 00:58, and every hour then
+                    while (epoch < initial_time + timespan)
+                    {
+                        predict_orbit(satellite_object_, &satellite_orbit2, predict_to_julian_double(initial_time));
+                        predict_observe_orbit(observer_station, &satellite_orbit2, &observation_pos2);
+                        // Make elevation to 8 degree, so it always leaves precedence to other sats
+                        observation_pos2.elevation = 0.1396; 
+                        //Full disk
+                        double aos = epoch;
+                        double los =  aos + 1320; // 22min long transmision
+                        if(aos < initial_time && los > initial_time)
+                        {
+                            //aos earlier than initial time
+                            aos = initial_time;
+                        }
+                        if(aos > initial_time && los > (initial_time+timespan))
+                        {
+                            //los greater than end time
+                            los = initial_time+timespan;
+                        }
+                        if(aos >= initial_time && los <= (initial_time+timespan))
+                        {
+                            passes.push_back(SatellitePass{norad, aos, los, static_cast<float>(observation_pos2.elevation * RAD_TO_DEG)});
+                        }
+                        // Norhen hemispehere
+                        aos = epoch + 1800; // add half hour(start at XX:28)
+                        los =  aos + 780; // 13min long transmision
+                        if(aos < initial_time && los > initial_time)
+                        {
+                            //aos earlier than initial time
+                            aos = initial_time;
+                        }
+                        if(aos > initial_time && los > (initial_time+timespan))
+                        {
+                            //los greater than end time
+                            los = initial_time+timespan;
+                        }
+                        if(aos >= initial_time && los <= (initial_time+timespan))
+                        {
+                            passes.push_back(SatellitePass{norad, aos, los, static_cast<float>(observation_pos2.elevation * RAD_TO_DEG)});
+                        }
+                        epoch+= 3600;  //+1h
+                    }
                 }
+            }
+            else
+            {
+                while (current_time < initial_time + timespan)
+                {
+                    predict_observation next_aos, next_los;
+                    next_aos = next_los = predict_next_los(observer_station, satellite_object_, predict_to_julian_double(current_time));
 
-                // if (max_el >= autotrack_min_elevation)
-                passes.push_back({norad, next_aos_time_, next_los_time_, max_el});
-                // logger->info("Pass of %s at AOS %s LOS %s elevation %.2f", tle.name.c_str(),
-                //              timestamp_to_string(next_aos_time_).c_str(),
-                //              timestamp_to_string(next_los_time_).c_str(),
-                //              max_el);
+                    // Calculate the AOS before that LOS
+                    double next_aos_time_, next_los_time_;
+                    next_aos_time_ = next_los_time_ = predict_from_julian(next_los.time);
+                    do
+                    {
+                        next_aos = predict_next_aos(observer_station, satellite_object_, predict_to_julian_double(next_aos_time_));
+                        next_aos_time_ -= 10;
+                    } while (predict_from_julian(next_aos.time) >= next_los_time_);
 
-                current_time = next_los_time_ + 1;
+                    next_los_time_ = predict_from_julian(next_los.time);
+                    next_aos_time_ = predict_from_julian(next_aos.time);
+
+                    float max_el = 0;
+                    predict_position satellite_orbit2;
+                    predict_observation observation_pos2;
+                    double time_step = abs(next_los_time_ - next_aos_time_) / 50.0;
+                    for (double ctime = next_aos_time_; ctime <= next_los_time_; ctime += time_step)
+                    {
+                        predict_orbit(satellite_object_, &satellite_orbit2, predict_to_julian_double(ctime));
+                        predict_observe_orbit(observer_station, &satellite_orbit2, &observation_pos2);
+                        if (observation_pos2.elevation * RAD_TO_DEG > max_el)
+                            max_el = observation_pos2.elevation * RAD_TO_DEG;
+                    }
+
+                    // if (max_el >= autotrack_min_elevation)
+                    passes.push_back({norad, next_aos_time_, next_los_time_, max_el});
+                    // logger->info("Pass of %s at AOS %s LOS %s elevation %.2f", tle.name.c_str(),
+                    //              timestamp_to_string(next_aos_time_).c_str(),
+                    //              timestamp_to_string(next_los_time_).c_str(),
+                    //              max_el);
+
+                    current_time = next_los_time_ + 1;
+                }
             }
         }
         else // For pre-processed "AOS"/"LOS" times, we just fill in meta
